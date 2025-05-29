@@ -1,0 +1,35 @@
+version: "3.8"
+services:
+  ps:
+    build: .
+    container_name: ps
+    environment:
+      - MASTER_ADDR=ps
+      - MASTER_PORT=29500
+    command: python ps.py
+    networks:
+      - dist-net
+
+  worker1:
+    build: .
+    container_name: worker1
+    environment:
+      - MASTER_ADDR=ps
+      - MASTER_PORT=29500
+    command: python worker.py --rank 1
+    networks:
+      - dist-net
+
+  worker2:
+    build: .
+    container_name: worker2
+    environment:
+      - MASTER_ADDR=ps
+      - MASTER_PORT=29500
+    command: python worker.py --rank 2
+    networks:
+      - dist-net
+
+networks:
+  dist-net:
+    driver: bridge
