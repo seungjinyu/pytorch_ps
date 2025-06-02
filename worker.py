@@ -15,6 +15,7 @@ def run_worker(rank, world_size):
 
     for i in range(5):
         weights = rpc.rpc_sync("ps", get_weights, args=())
+        print(f"[Worker {rank}] Received weights: {list(weights.keys())}")
         model.load_state_dict(weights)
 
         # fake training
@@ -25,7 +26,19 @@ def run_worker(rank, world_size):
 
         optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+
+        print([f"Worker {rank}] === GRADIENTS ==="])
+
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(f"[Worker {rank}] Gradient of {name}:\n{param.grad}")
+
+        # optimizer.step()
+
+        print(f"[Worker {rank}] Updated weights PARAMETERS :")
+        for name, param in model.state_dict().items():
+            print(f"{name}:\n{param}")
+
 
         rpc.rpc_sync("ps", update_weights, args=(model.state_dict(),))
         print(f"[Worker {rank}] Step {i+1} finished.")
