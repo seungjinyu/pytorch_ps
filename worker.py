@@ -1,47 +1,36 @@
 import torch
 import torch.distributed.rpc as rpc
-import torch.optim as optim
-import atexit
+import torch.nn.functional as F
 import argparse
+import atexit
 from model import SimpleNet
-from rpc_api import get_weights, update_weights
 
 def run_worker(rank, world_size):
     print(f"[INFO] Initializing RPC for Worker {rank}...")
     rpc.init_rpc(f"worker{rank}", rank=rank, world_size=world_size)
 
-    model = SimpleNet()
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    ps_rref = rpc.rpc_sync("ps", lambda: rpc.get_rref_owner(rpc.RRef(lambda: None)))  # just trigger ps
+    ps_rref = rpc.rpc_sync("ps", get_ps_rref)
 
-    for i in range(5):
-        weights = rpc.rpc_sync("ps", get_weights, args=())
-        print(f"[Worker {rank}] Received weights: {list(weights.keys())}")
+    for step in range(5):
+        # 1. Get weights
+        weights = rpc.rpc_sync("ps", lambda ps: ps.get_weights(), args=(ps_rref,))
+        model = SimpleNet()
         model.load_state_dict(weights)
 
-        # fake training
+        # 2. Train
         data = torch.randn(4, 10)
         target = torch.randn(4, 1)
         output = model(data)
-        loss = ((output - target) ** 2).mean()
+        loss = F.mse_loss(output, target)
 
-        optimizer.zero_grad()
+        model.zero_grad()
         loss.backward()
+        grads = [p.grad for p in model.parameters()]
 
-        print([f"Worker {rank}] === GRADIENTS ==="])
-
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                print(f"[Worker {rank}] Gradient of {name}:\n{param.grad}")
-
-        # optimizer.step()
-
-        print(f"[Worker {rank}] Updated weights PARAMETERS :")
-        for name, param in model.state_dict().items():
-            print(f"{name}:\n{param}")
-
-
-        rpc.rpc_sync("ps", update_weights, args=(model.state_dict(),))
-        print(f"[Worker {rank}] Step {i+1} finished.")
+        # 3. Send gradients to PS
+        rpc.rpc_sync("ps", lambda ps, g: ps.apply_gradients(g), args=(ps_rref, grads,))
+        print(f"[Worker {rank}] Sent gradients to PS")
 
     rpc.shutdown()
 
@@ -50,7 +39,7 @@ def graceful_shutdown():
     try:
         rpc.shutdown()
     except:
-        print("[WARN] RPC shutdown error: RPC has not been initialized.")
+        pass
 
 atexit.register(graceful_shutdown)
 
