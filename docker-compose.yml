@@ -3,7 +3,10 @@ services:
   ps:
     build: .
     container_name: ps
+    platform: linux/amd64
     environment:
+      - RANK=0
+      - WORLD_SIZE=3
       - MASTER_ADDR=ps
       - MASTER_PORT=29500
     command: python ps.py
@@ -13,20 +16,30 @@ services:
   worker1:
     build: .
     container_name: worker1
+    platform: linux/amd64
     environment:
+      - RANK=1
+      - WORLD_SIZE=3
       - MASTER_ADDR=ps
       - MASTER_PORT=29500
-    command: python worker.py --rank 1
+    depends_on:
+      - ps
+    command: python worker.py
     networks:
       - dist-net
 
   worker2:
     build: .
     container_name: worker2
+    platform: linux/amd64
     environment:
+      - RANK=2
+      - WORLD_SIZE=3
       - MASTER_ADDR=ps
       - MASTER_PORT=29500
-    command: python worker.py --rank 2
+    depends_on:
+      - ps
+    command: python worker.py
     networks:
       - dist-net
 
