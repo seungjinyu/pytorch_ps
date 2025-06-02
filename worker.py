@@ -1,44 +1,49 @@
 import torch
-import torch.nn as nn
 import torch.distributed.rpc as rpc
-import os
-from rpc_utils import no_op
+import torch.optim as optim
+import atexit
+import argparse
+from model import SimpleNet
+from rpc_api import get_weights, update_weights
 
-ps_ref = None  # 전역으로 선언
-
-def fetch_weights():
-    return ps_ref.rpc_sync().get_weights()
-
-def send_gradients(grads):
-    return ps_ref.rpc_sync().apply_gradients(grads)
-
-def run_worker():
-    global ps_ref
-    rank = int(os.environ["RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
-
+def run_worker(rank, world_size):
+    print(f"[INFO] Initializing RPC for Worker {rank}...")
     rpc.init_rpc(f"worker{rank}", rank=rank, world_size=world_size)
-    ps_ref = rpc.remote("ps", no_op)
 
-    x = torch.tensor([[1.0, 2.0]])
-    y = torch.tensor([[1.0]])
+    model = SimpleNet()
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-    weights = rpc.rpc_sync("ps", fetch_weights)
+    for i in range(5):
+        weights = rpc.rpc_sync("ps", get_weights, args=())
+        model.load_state_dict(weights)
 
-    model = nn.Linear(2, 1)
-    with torch.no_grad():
-        for p, w in zip(model.parameters(), weights):
-            p.copy_(w)
+        # fake training
+        data = torch.randn(4, 10)
+        target = torch.randn(4, 1)
+        output = model(data)
+        loss = ((output - target) ** 2).mean()
 
-    pred = model(x)
-    loss = nn.MSELoss()(pred, y)
-    loss.backward()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-    grads = [p.grad for p in model.parameters()]
-    rpc.rpc_sync("ps", send_gradients, args=(grads,))
+        rpc.rpc_sync("ps", update_weights, args=(model.state_dict(),))
+        print(f"[Worker {rank}] Step {i+1} finished.")
 
-    print(f"Worker {rank} done.")
     rpc.shutdown()
 
+def graceful_shutdown():
+    print("[INFO] Gracefully shutting down Worker RPC...")
+    try:
+        rpc.shutdown()
+    except:
+        print("[WARN] RPC shutdown error: RPC has not been initialized.")
+
+atexit.register(graceful_shutdown)
+
 if __name__ == "__main__":
-    run_worker()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rank", type=int, required=True)
+    parser.add_argument("--world_size", type=int, required=True)
+    args = parser.parse_args()
+    run_worker(args.rank, args.world_size)
