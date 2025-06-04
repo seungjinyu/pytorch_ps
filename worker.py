@@ -1,8 +1,7 @@
 import torch
 import torch.distributed.rpc as rpc
-import torch.optim as optim
-import atexit
 import argparse
+import atexit
 from model import SimpleNet
 from rpc_api import get_weights, update_weights
 
@@ -11,37 +10,27 @@ def run_worker(rank, world_size):
     rpc.init_rpc(f"worker{rank}", rank=rank, world_size=world_size)
 
     model = SimpleNet()
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-    for i in range(5):
-        weights = rpc.rpc_sync("ps", get_weights, args=())
-        print(f"[Worker {rank}] Received weights: {list(weights.keys())}")
+    for step in range(5):
+        weights = get_weights()
         model.load_state_dict(weights)
 
-        # fake training
-        data = torch.randn(4, 10)
-        target = torch.randn(4, 1)
-        output = model(data)
-        loss = ((output - target) ** 2).mean()
+        x = torch.randn(4, 10)
+        y = torch.randn(4, 1)
 
-        optimizer.zero_grad()
+        output = model(x)
+        loss = ((output - y) ** 2).mean()
+
+        model.zero_grad()
         loss.backward()
 
-        print([f"Worker {rank}] === GRADIENTS ==="])
-
+        grad_dict = {}
         for name, param in model.named_parameters():
             if param.grad is not None:
-                print(f"[Worker {rank}] Gradient of {name}:\n{param.grad}")
+                grad_dict[name] = param.grad.cpu()
 
-        # optimizer.step()
-
-        print(f"[Worker {rank}] Updated weights PARAMETERS :")
-        for name, param in model.state_dict().items():
-            print(f"{name}:\n{param}")
-
-
-        rpc.rpc_sync("ps", update_weights, args=(model.state_dict(),))
-        print(f"[Worker {rank}] Step {i+1} finished.")
+        print(f"[Worker {rank}] Sending gradients to PS (step {step+1})")
+        update_weights(grad_dict)
 
     rpc.shutdown()
 
@@ -50,7 +39,7 @@ def graceful_shutdown():
     try:
         rpc.shutdown()
     except:
-        print("[WARN] RPC shutdown error: RPC has not been initialized.")
+        pass
 
 atexit.register(graceful_shutdown)
 
