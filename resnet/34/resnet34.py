@@ -5,6 +5,11 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.models import resnet34
 from torch.utils.data import DataLoader
+import sys
+import jutils
+
+logger = jutils.DualLogger("output_log.txt")
+sys.stdout = logger
 
 def count_parameters_and_gradients(model):
     total_params = 0
@@ -78,3 +83,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+    logger.log.close()
+    
+
