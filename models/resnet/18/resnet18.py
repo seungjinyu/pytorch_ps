@@ -8,11 +8,16 @@ from torchvision.models import resnet18
 from torch.utils.data import DataLoader
 import platform
 import time 
+import os
 
 device = ""
 
+# root dir setting
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+
+# device setting
 if platform.system() == "Darwin":
-    device = torch.device("mps" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 elif platform.system() == "Linux":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -82,8 +87,8 @@ def main() :
     ])
 
     # dataset loading 
-    train_dataset = torchvision.datasets.CIFAR10(root="../../data",train=True, transform=transform, download=True)
-    test_dataset = torchvision.datasets.CIFAR10(root="../../data",train=False, transform=transform, download= True)
+    train_dataset = torchvision.datasets.CIFAR10(root=root_dir,train=True, transform=transform, download=True)
+    test_dataset = torchvision.datasets.CIFAR10(root=root_dir,train=False, transform=transform, download= True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
