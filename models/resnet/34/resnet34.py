@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader
 import sys
 import jutils
 
+import time
+
 logger = jutils.DualLogger("output_log.txt")
 sys.stdout = logger
 
@@ -39,8 +41,8 @@ def main():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    train_dataset = torchvision.datasets.CIFAR10(root="../data", train=True, transform=transform, download=True)
-    test_dataset = torchvision.datasets.CIFAR10(root="../data", train=False, transform=transform, download=True)
+    train_dataset = torchvision.datasets.CIFAR10(root="../../data", train=True, transform=transform, download=True)
+    test_dataset = torchvision.datasets.CIFAR10(root="../../data", train=False, transform=transform, download=True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
@@ -53,7 +55,9 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=5e-4)
 
+
     for epoch in range(num_epochs):
+        start_time = time.time()
         model.train()
         running_loss = 0.0
         for inputs, targets in train_loader:
@@ -69,6 +73,9 @@ def main():
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader):.4f}")
         count_parameters_and_gradients(model)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Elapsed Time : {elapsed_time:.4f} seconds")
 
         model.eval()
         correct, total = 0, 0

@@ -57,8 +57,8 @@ def main() :
     ])
 
     # dataset loading 
-    train_dataset = torchvision.datasets.CIFAR10(root="../data",train=True, transform=transform, download=True)
-    test_dataset = torchvision.datasets.CIFAR10(root="../data",train=False, transform=transform, download= True)
+    train_dataset = torchvision.datasets.CIFAR10(root="../../data",train=True, transform=transform, download=True)
+    test_dataset = torchvision.datasets.CIFAR10(root="../../data",train=False, transform=transform, download= True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
