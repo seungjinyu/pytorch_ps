@@ -64,7 +64,7 @@ def main() :
     test_loader = DataLoader(test_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
 
     print("Set up the model to resnet18")
-    model = resnet18(weights= None)
+    model = resnet18(pretrained=False)
     model.fc = nn.Linear(model.fc.in_features, 10)
     model = model.to(device)
 
