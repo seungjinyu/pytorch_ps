@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 from torchvision.models import resnet18
 from torch.utils.data import DataLoader
 import platform
-
+import time 
 
 device = ""
 
@@ -15,6 +15,31 @@ if platform.system() == "Darwin":
     device = torch.device("mps" if torch.cuda.is_available() else "cpu")
 elif platform.system() == "Linux":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def compress_topk(grad_tensor, k_ratio=0.01):
+    flat_grad = grad_tensor.view(-1)
+    total_size = flat_grad.numel()
+    k = max(1, int(k_ratio * total_size))
+
+    # top-k 압축
+    topk_vals, topk_indices = torch.topk(flat_grad.abs(), k)
+    real_vals = flat_grad[topk_indices]
+
+    # 🔽 크기 출력
+    original_size_bytes = flat_grad.numel() * 4  # float32 = 4 bytes
+    compressed_size_bytes = real_vals.numel() * 4 + topk_indices.numel() * 4  # 값 + 인덱스
+
+    compression_ratio = compressed_size_bytes / original_size_bytes
+
+    print(f"[Compression] Original: {original_size_bytes} bytes | Compressed: {compressed_size_bytes} bytes | Ratio: {compression_ratio:.2%}")
+
+    return real_vals, topk_indices, grad_tensor.shape
+
+
+def decompress_topk(real_vals, indices, shape):
+    flat = torch.zeros(torch.prod(torch.tensor(shape)), device=real_vals.device)
+    flat[indices] = real_vals
+    return flat.view(shape)
 
 def print_param_and_grad_stats(model):
     total_params = 0
@@ -73,6 +98,7 @@ def main() :
     optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum=0.9 ,weight_decay=5e-4)
 
     for epoch in range(num_epochs):
+        start_time = time.time()
         model.train()
         running_loss = 0.0
         for inputs, targets in train_loader:
@@ -87,6 +113,10 @@ def main() :
             running_loss += loss.item()
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss:{running_loss/len(train_loader):.4f}")
+        end_time = time.time()
+
+        elapsed_time = end_time - start_time
+        print(f"Elapsed time {elapsed_time:.4f} seconds")
 
         print_param_and_grad_stats(model)
 
@@ -100,6 +130,28 @@ def main() :
                 total += targets.size(0)
                 correct += prediected.eq(targets).sum().item()
         print(f"Test Accuracy: {100 * correct / total:.2f}%")
+        
+        com_start_time = time.time()
+        # worker compress
+        grads = []
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                values, indices, shape = compress_topk(param.grad, k_ratio=0.01)
+                grads.append((name, values.cpu(), indices.cpu(), shape))  # 보내기 용도
+        com_end_time = time.time()
+        com_elapsed_time = com_end_time - com_start_time
+        print(f"Com elapsed time {com_elapsed_time}")
+
+        decom_start_time = time.time()
+        # ps decompress
+        for name, values, indices, shape in grads:
+            param = model.state_dict()[name]
+            decompressed_grad = decompress_topk(values.to(device), indices.to(device), shape)
+            param.grad = decompressed_grad
+        decom_end_time = time.time()
+        decom_elapsed_time = decom_end_time - decom_start_time
+        
+        print(f"Decxom elapsed time {decom_elapsed_time}")
 
     torch.save(model.state_dict(),'resnet18_cifra10.pth')
 

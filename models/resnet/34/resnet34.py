@@ -29,6 +29,18 @@ def count_parameters_and_gradients(model):
     print(f"[Epoch Summary] Total Parameters: {total_params}, {param_size_mb:.2f} MB")
     print(f"[Epoch Summary] Total Gradients : {total_grads}, {grad_size_mb:.2f} MB")
 
+def compress_topk(grand_tensor, k_ratio=0.01):
+    flat_grad = grand_tensor.view(-1)
+    k = max(1,int(k_ratio *flat_grad.numel()))
+    topk_vals, topk_indices = torch.topk(flat_grad.abs(),k)
+    real_vals = flat_grad[topk_indices]
+    return real_vals, topk_indices,grand_tensor.shape
+
+def decompress_topk(real_vals, indices, shape):
+    flat = torch.zeros(torch.prod(torch.tensor(shape)), device=real_vals.device)
+    flat[indices] = real_vals
+    return flat.view(shape)
+
 def main():
     batch_size = 128
     learning_rate = 0.01
