@@ -14,10 +14,12 @@ sys.stdout = logger
 def count_parameters_and_gradients(model):
     total_params = 0
     total_grads = 0
+    layer_idx = 1
     for name, param in model.named_parameters():
         num_params = param.numel()
         grad_params = param.grad.numel() if param.grad is not None else 0
-        print(f"[{name:<40}] shape={tuple(param.shape)}, params={num_params}, grad={grad_params}")
+        print(f"[{layer_idx} {name:<40}] shape={tuple(param.shape)}, params={num_params}, grad={grad_params}")
+        layer_idx+=1
         total_params += num_params
         total_grads += grad_params
     param_size_mb = total_params * 4 / (1024 ** 2)
@@ -84,5 +86,5 @@ def main():
 if __name__ == '__main__':
     main()
     logger.log.close()
-    
+
 
