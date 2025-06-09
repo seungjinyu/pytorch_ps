@@ -28,23 +28,15 @@ def print_param_and_grad_stats(model):
     total_param_bytes = 0
     total_grad_bytes = 0
 
-    # for name, param in model.named_parameters():
-    #     numel = param.numel()
-    #     grad_numel = param.grad.numel() if param.grad is not None else 0
-    #     total_params += numel
-    #     total_grads += grad_numel
-
-    #     param_bytes = numel * 4 / 1024 / 1024  # float32 = 4 bytes
-    #     grad_bytes = grad_numel * 4 / 1024 / 1024
-
-    #     total_param_bytes += param_bytes
-    #     total_grad_bytes += grad_bytes
-
-    #     print(f"{name:<40} {str(param.shape):<25} - param: {param_bytes:.2f} MB, grad: {grad_bytes:.2f} MB")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            total_params += param.numel()
+        if param.grad is not None:
+            total_grads += param.grad.numel()
 
     print(f"\n[Epoch Summary]")
-    print(f"Total Parameters: {total_params:,} - {total_param_bytes:.2f} MB")
-    print(f"Total Gradients : {total_grads:,} - {total_grad_bytes:.2f} MB")
+    print(f"Total Parameters: {total_params:,} - {total_params * 4/ 1e6:.2f} MB")
+    print(f"Total Gradients : {total_grads:,} - {total_grads * 4 /1e6:.2f} MB")
 
 def print_compressed_grad_stats(compressed_grads):
     print("\n[Compressed Gradient Summary]")
