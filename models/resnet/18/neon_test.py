@@ -20,6 +20,10 @@ start = time.time()
 
 abs_neon(x.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),y.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),size)
 
+abs_neon(x.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+         y.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+         size)
+
 end = time.time()
 
 print(f"NEON abs completed in {end - start:.6f} seconds")
