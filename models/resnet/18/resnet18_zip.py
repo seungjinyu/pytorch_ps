@@ -11,9 +11,17 @@ import random
 import time
 import resnet18_utils as ru
 import zlib, bz2, lzma, lz4.frame, zstandard as zstd, snappy, blosc2
+import csv
 
 # root dir setting
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+result_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "compression_results.csv"))
+
+# Write CSV header if file doesn't exist
+if not os.path.exists(result_file):
+    with open(result_file, mode='w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Epoch", "Type", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio", "Time (s)"])
 
 def compress_and_measure(data: bytes, algorithm: str):
     start = time.time()
@@ -40,7 +48,7 @@ def compress_and_measure(data: bytes, algorithm: str):
 def main():
     batch_size = 128
     learning_rate = 0.01
-    num_epochs = 1
+    num_epochs = 3
     device = ru.setting_platform()
 
     transform = transforms.Compose([
@@ -67,6 +75,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=5e-4)
 
+    prev_params = {}
+
     for epoch in range(num_epochs):
         start_time = time.time()
         model.train()
@@ -89,39 +99,42 @@ def main():
 
         ru.print_param_and_grad_stats(model)
 
-        # Accuracy check (optional, commented out)
-        # model.eval()
-        # correct, total = 0, 0
-        # with torch.no_grad():
-        #     for inputs, targets in test_loader:
-        #         inputs, targets = inputs.to(device), targets.to(device)
-        #         outputs = model(inputs)
-        #         _, predicted = outputs.max(1)
-        #         total += targets.size(0)
-        #         correct += predicted.eq(targets).sum().item()
-        # print(f"Test Accuracy: {100 * correct / total:.2f}%")
+        for comp_type in ["grad", "delta"]:
+            epoch_results = {algo: {"size": 0, "time": 0.0} for algo in ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]}
+            total_original_size = 0
 
-        epoch_results = {algo: {"size": 0, "time": 0.0} for algo in ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]}
-        total_original_size = 0
+            for name, param in model.named_parameters():
+                if param.grad is None:
+                    continue
 
-        for name, param in model.named_parameters():
-            if param.grad is None:
-                continue
+                if comp_type == "delta":
+                    current = param.data.detach().cpu().numpy().astype(np.float32)
+                    if name in prev_params:
+                        data_np = current - prev_params[name]
+                    else:
+                        data_np = current
+                    prev_params[name] = current.copy()
+                else:  # "grad"
+                    data_np = param.grad.detach().cpu().numpy().astype(np.float32)
 
-            grad_np = param.grad.detach().cpu().numpy().astype(np.float32)
-            grad_bytes = grad_np.tobytes()
-            original_size = len(grad_bytes)
-            total_original_size += original_size
+                data_bytes = data_np.tobytes()
+                original_size = len(data_bytes)
+                total_original_size += original_size
 
-            for algo in epoch_results:
-                comp_data, comp_time = compress_and_measure(grad_bytes, algo)
-                epoch_results[algo]["size"] += len(comp_data)
-                epoch_results[algo]["time"] += comp_time
+                for algo in epoch_results:
+                    comp_data, comp_time = compress_and_measure(data_bytes, algo)
+                    epoch_results[algo]["size"] += len(comp_data)
+                    epoch_results[algo]["time"] += comp_time
 
-        print(f"\n[Epoch {epoch+1} Compression Summary] Total Original Size: {total_original_size} bytes")
-        for algo, stats in epoch_results.items():
-            ratio = stats["size"] / total_original_size
-            print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
+                    with open(result_file, mode='a', newline='') as f:
+                        writer = csv.writer(f)
+                        ratio = len(comp_data) / original_size
+                        writer.writerow([epoch + 1, comp_type, algo, original_size, len(comp_data), f"{ratio:.4f}", f"{comp_time:.4f}"])
+
+            print(f"\n[Epoch {epoch+1} {comp_type.upper()} Compression Summary] Total Original Size: {total_original_size} bytes")
+            for algo, stats in epoch_results.items():
+                ratio = stats["size"] / total_original_size
+                print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
 
 if __name__ == '__main__':
     main()
