@@ -1,74 +1,61 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision 
-# 
+import torchvision
 import torchvision.transforms as transforms
 from torchvision.models import resnet18
-from torch.utils.data import DataLoader
-import platform
-import time 
+from torch.utils.data import DataLoader, Subset
+import time
 import os
-
-device = ""
+import random
+import resnet18_utils as ru
+import ctypes
+import numpy as np
 
 # root dir setting
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
 
 # device setting
-if platform.system() == "Darwin":
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-elif platform.system() == "Linux":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = ru.setting_platform()
 
-def compress_topk(grad_tensor, k_ratio=0.01):
+arm_check = ru.is_arm()
+print(arm_check)
+if arm_check:
+    print("setting up dylib")
+    dylib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "./libneon_abs.dylib"))
+    neon_lib = ctypes.cdll.LoadLibrary(dylib_dir)
+    neon_lib.abs_neon.argtypes = [np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),ctypes.c_int]
+
+# compress with external dylib
+def neon_abs_neon(input_tensor: torch.Tensor) -> torch.Tensor:
+    # 반드시 flatten + float32 + contiguous + CPU 변환까지
+    input_tensor = input_tensor.contiguous().view(-1).to("cpu").float()
+    input_np = input_tensor.numpy()
+    output_np = np.zeros_like(input_np, dtype=np.float32)
+
+    neon_lib.abs_neon(
+        input_np,
+        output_np,
+        ctypes.c_int(input_np.size)
+    )
+    return torch.from_numpy(output_np).to(input_tensor.device)
+
+
+def compress_topk_neon(grad_tensor, k_ratio=0.01):
     flat_grad = grad_tensor.view(-1)
+    abs_grad = neon_abs_neon(flat_grad)
     total_size = flat_grad.numel()
     k = max(1, int(k_ratio * total_size))
 
-    # top-k 압축
-    topk_vals, topk_indices = torch.topk(flat_grad.abs(), k)
+    topk_vals, topk_indices = torch.topk(abs_grad, k)
     real_vals = flat_grad[topk_indices]
 
-    # 🔽 크기 출력
-    original_size_bytes = flat_grad.numel() * 4  # float32 = 4 bytes
-    compressed_size_bytes = real_vals.numel() * 4 + topk_indices.numel() * 4  # 값 + 인덱스
+    # original_size_bytes = total_size * 4
+    # compressed_size_bytes = real_vals.numel() * 4 + topk_indices.numel() * 4
+    # compression_ratio = compressed_size_bytes / original_size_bytes
 
-    compression_ratio = compressed_size_bytes / original_size_bytes
-
-    print(f"[Compression] Original: {original_size_bytes} bytes | Compressed: {compressed_size_bytes} bytes | Ratio: {compression_ratio:.2%}")
-
+    # print(f"[Compression] Original: {original_size_bytes} bytes | Compressed: {compressed_size_bytes} bytes | Ratio: {compression_ratio:.2%}")
     return real_vals, topk_indices, grad_tensor.shape
-
-
-def decompress_topk(real_vals, indices, shape):
-    flat = torch.zeros(torch.prod(torch.tensor(shape)), device=real_vals.device)
-    flat[indices] = real_vals
-    return flat.view(shape)
-
-def print_param_and_grad_stats(model):
-    total_params = 0
-    total_grads = 0
-    total_param_bytes = 0
-    total_grad_bytes = 0
-
-    for name, param in model.named_parameters():
-        numel = param.numel()
-        grad_numel = param.grad.numel() if param.grad is not None else 0
-        total_params += numel
-        total_grads += grad_numel
-
-        param_bytes = numel * 4 / 1024 / 1024  # float32 = 4 bytes
-        grad_bytes = grad_numel * 4 / 1024 / 1024
-
-        total_param_bytes += param_bytes
-        total_grad_bytes += grad_bytes
-
-        print(f"{name:<40} {str(param.shape):<25} - param: {param_bytes:.2f} MB, grad: {grad_bytes:.2f} MB")
-
-    print(f"\n[Epoch Summary]")
-    print(f"Total Parameters: {total_params:,} - {total_param_bytes:.2f} MB")
-    print(f"Total Gradients : {total_grads:,} - {total_grad_bytes:.2f} MB")
 
 
 
@@ -77,7 +64,7 @@ def main() :
     batch_size = 128
     learning_rate = 0.01
     num_epochs = 1
-    print(f"Running on {platform.system()} and using {device}")
+    print(f"Running on {device}")
 
     # CIFAR-10 for transform
     transform = transforms.Compose([
@@ -86,12 +73,20 @@ def main() :
         transforms.Normalize((0.5,),(0.5,))
     ])
 
-    # dataset loading 
+    # train dataset loading
     train_dataset = torchvision.datasets.CIFAR10(root=root_dir,train=True, transform=transform, download=True)
+
+    # 1/10
+    num_samples = len(train_dataset)
+    random.seed(42)
+    indices = random.sample(range(num_samples),num_samples // 10)
+    train_dataset = Subset(train_dataset, indices)
+
+    # test data loading
     test_dataset = torchvision.datasets.CIFAR10(root=root_dir,train=False, transform=transform, download= True)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size,shuffle=True,num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size,shuffle=True,num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size,shuffle=True,num_workers=0)
 
     print("Set up the model to resnet18")
     model = resnet18(pretrained=False)
@@ -122,8 +117,9 @@ def main() :
 
         elapsed_time = end_time - start_time
         print(f"Elapsed time {elapsed_time:.4f} seconds")
+        ru.print_param_and_grad_stats(model)
 
-        print_param_and_grad_stats(model)
+
 
         model.eval()
         correct , total = 0,0
@@ -135,32 +131,52 @@ def main() :
                 total += targets.size(0)
                 correct += prediected.eq(targets).sum().item()
         print(f"Test Accuracy: {100 * correct / total:.2f}%")
-        
+
         com_start_time = time.time()
+
         # worker compress
         grads = []
         for name, param in model.named_parameters():
+            print(f"param.device: {param.device}")
             if param.grad is not None:
-                values, indices, shape = compress_topk(param.grad, k_ratio=0.01)
+                values, indices, shape = ru.compress_topk(param.grad, k_ratio=0.01)
                 grads.append((name, values.cpu(), indices.cpu(), shape))  # 보내기 용도
         com_end_time = time.time()
         com_elapsed_time = com_end_time - com_start_time
-        print(f"Com elapsed time {com_elapsed_time}")
+        print(f"\n[Com elapsed time {com_elapsed_time}]")
+        ru.print_compressed_grad_stats(grads)
+
+        if arm_check:
+        # Neon compress
+            neon_com_start_time = time.time()
+            grads = []
+            for name, param in model.named_parameters():
+                print(f"param.device: {param.device}")
+                if param.grad is not None:
+                    values, indices, shape = compress_topk_neon(param.grad, k_ratio=0.01)
+                    grads.append((name, values.cpu(), indices.cpu(), shape))  # 보내기 용도
+            neon_com_end_time = time.time()
+            neon_com_elapsed_time = neon_com_end_time - neon_com_start_time
+            print(f"\n[Neon Com elapsed time {neon_com_elapsed_time}]")
+            ru.print_compressed_grad_stats(grads)
+
 
         decom_start_time = time.time()
         # ps decompress
         for name, values, indices, shape in grads:
             param = model.state_dict()[name]
-            decompressed_grad = decompress_topk(values.to(device), indices.to(device), shape)
+            decompressed_grad = ru.decompress_topk(values.to(device), indices.to(device), shape)
             param.grad = decompressed_grad
         decom_end_time = time.time()
         decom_elapsed_time = decom_end_time - decom_start_time
-        
-        print(f"Decxom elapsed time {decom_elapsed_time}")
+        print(f"Decom elapsed time {decom_elapsed_time}")
 
-    torch.save(model.state_dict(),'resnet18_cifra10.pth')
+
+
+    # print("Saved the model into pth")
+    # torch.save(model.state_dict(),'resnet18_cifra10.pth')
 
 if __name__ == '__main__':
-    # windows and mac needs this 
+    # windows and mac needs this
     # why? -> spawn() runs the script and makes and child process
     main()

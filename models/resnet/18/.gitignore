@@ -5,3 +5,4 @@ Miniforge3-MacOSX-arm64.sh
 data
 MNIST
 *.pth
+*.dylib
