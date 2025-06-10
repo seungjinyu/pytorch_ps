@@ -31,7 +31,7 @@ for t in types:
     plt.legend()
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig(f'{t}_compression_ratio_bar.png')
+    plt.savefig(f'images/{t}_compression_ratio_bar.png')
     plt.close()
 
 # 2. 산점도: 압축률 vs 시간 (Epoch 50)
@@ -45,18 +45,19 @@ for t in types:
     plt.xlabel('Time (s)')
     plt.ylabel('Compression Ratio')
     plt.tight_layout()
-    plt.savefig(f'{t}_ratio_vs_time_scatter.png')
+    plt.savefig(f'images/{t}_ratio_vs_time_scatter.png')
     plt.close()
 
 # 3. 라인 차트: 42.95MB 근처 데이터의 에포크별 압축률 변화
 for t in types:
     plt.figure(figsize=(10, 6))
-    # 42.95MB 근처 (42,900,000 ~ 43,000,000) 데이터 필터링
+    # 42.95MB 근처 (30,000,000 ~ 44,000,000) 데이터 필터링
     large_data = df[(df['Original Size'] >= 42900000) & (df['Original Size'] <= 43000000) & (df['Type'] == t)]
-    print(f"Debug - {t} large data shape: {large_data.shape}")  # 디버깅 출력
+
     if large_data.empty:
-        print(f"Warning: No data found for {t} with Original Size near 42.95MB. Using all data instead.")
-        large_data = df[df['Type'] == t]  # 데이터가 없으면 전체 사용
+        print(f"[Warning] No data found for {t} near 42.95MB. Using all available data.")
+        large_data = df[df['Type'] == t]  # fallback
+
     for alg in algorithms:
         data = large_data[large_data['Algorithm'] == alg].groupby('Epoch')['Compression Ratio'].mean()
         if not data.empty:
@@ -70,7 +71,7 @@ for t in types:
     plt.ylabel('Compression Ratio')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f'{t}_ratio_over_epochs_line.png')
+    plt.savefig(f'images/{t}_ratio_over_epochs_line.png')
     plt.close()
 
 # 4. 파이 차트: 데이터 크기 분포
