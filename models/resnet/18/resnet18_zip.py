@@ -12,16 +12,18 @@ import time
 import resnet18_utils as ru
 import zlib, bz2, lzma, lz4.frame, zstandard as zstd, snappy, blosc2
 import csv
+from datetime import datetime
+from collections import defaultdict
 
 # root dir setting
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
-result_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "compression_results.csv"))
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+result_file = os.path.abspath(os.path.join(os.path.dirname(__file__), f"compression_results_{timestamp}.csv"))
 
-# Write CSV header if file doesn't exist
-if not os.path.exists(result_file):
-    with open(result_file, mode='w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Epoch", "Type", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio", "Time (s)"])
+# Write CSV header
+with open(result_file, mode='w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(["Epoch", "Type", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio", "Time (s)"])
 
 def compress_and_measure(data: bytes, algorithm: str):
     start = time.time()
@@ -48,8 +50,9 @@ def compress_and_measure(data: bytes, algorithm: str):
 def main():
     batch_size = 128
     learning_rate = 0.01
-    num_epochs = 3
+    num_epochs = 50
     device = ru.setting_platform()
+    algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]
 
     transform = transforms.Compose([
         transforms.Resize(224),
@@ -99,42 +102,77 @@ def main():
 
         ru.print_param_and_grad_stats(model)
 
-        for comp_type in ["grad", "delta"]:
-            epoch_results = {algo: {"size": 0, "time": 0.0} for algo in ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]}
-            total_original_size = 0
+        compression_tasks = []
+        total_original_size = 0
 
-            for name, param in model.named_parameters():
-                if param.grad is None:
-                    continue
+        for name, param in model.named_parameters():
+            if param.grad is None:
+                continue
 
-                if comp_type == "delta":
-                    current = param.data.detach().cpu().numpy().astype(np.float32)
-                    if name in prev_params:
-                        data_np = current - prev_params[name]
-                    else:
-                        data_np = current
-                    prev_params[name] = current.copy()
-                else:  # "grad"
-                    data_np = param.grad.detach().cpu().numpy().astype(np.float32)
+            grad_np = param.grad.detach().cpu().numpy().astype(np.float32)
+            grad_bytes = grad_np.tobytes()
+            original_size = len(grad_bytes)
+            total_original_size += original_size
+            compression_tasks.append(("grad", grad_bytes, original_size))
 
-                data_bytes = data_np.tobytes()
-                original_size = len(data_bytes)
-                total_original_size += original_size
+            current = param.data.detach().cpu().numpy().astype(np.float32)
+            if name in prev_params:
+                delta = current - prev_params[name]
+            else:
+                delta = current
 
-                for algo in epoch_results:
-                    comp_data, comp_time = compress_and_measure(data_bytes, algo)
-                    epoch_results[algo]["size"] += len(comp_data)
-                    epoch_results[algo]["time"] += comp_time
+            prev_params[name] = current.copy()
+            delta_bytes = delta.tobytes()
+            compression_tasks.append(("delta", delta_bytes, len(delta_bytes)))
 
-                    with open(result_file, mode='a', newline='') as f:
-                        writer = csv.writer(f)
-                        ratio = len(comp_data) / original_size
-                        writer.writerow([epoch + 1, comp_type, algo, original_size, len(comp_data), f"{ratio:.4f}", f"{comp_time:.4f}"])
+        epoch_results = {"grad": defaultdict(lambda: {"size": 0, "time": 0.0}),
+                         "delta": defaultdict(lambda: {"size": 0, "time": 0.0})}
 
-            print(f"\n[Epoch {epoch+1} {comp_type.upper()} Compression Summary] Total Original Size: {total_original_size} bytes")
-            for algo, stats in epoch_results.items():
-                ratio = stats["size"] / total_original_size
-                print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
+        for task, algo in [(task, algo) for task in compression_tasks for algo in algorithms]:
+            kind, data_bytes, original_size = task
+            comp_data, comp_time = compress_and_measure(data_bytes, algo)
+            comp_size = len(comp_data)
+            ratio = comp_size / original_size
+            epoch_results[kind][algo]["size"] += comp_size
+            epoch_results[kind][algo]["time"] += comp_time
+
+            with open(result_file, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([epoch + 1, kind, algo, original_size, comp_size, f"{ratio:.4f}", f"{comp_time:.4f}"])
+
+        print(f"\n[Epoch {epoch+1} Compression Summary] Total Original Size: {total_original_size} bytes")
+        for kind in ["grad", "delta"]:
+            print(f"\n>>> {kind.upper()} Compression:")
+            for algo in algorithms:
+                if algo in epoch_results[kind]:
+                    stats = epoch_results[kind][algo]
+                    ratio = stats["size"] / total_original_size
+                    print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
+
+    # === 에폭 전체 결과 요약 ===
+    print("\n[Final Compression Summary Across Epochs]")
+    summary_stats = {
+        "grad": defaultdict(list),
+        "delta": defaultdict(list)
+    }
+
+    with open(result_file, mode='r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            kind = row["Type"]
+            algo = row["Algorithm"]
+            ratio = float(row["Compression Ratio"])
+            time_taken = float(row["Time (s)"])
+            summary_stats[kind][algo].append((ratio, time_taken))
+
+    for kind in ["grad", "delta"]:
+        print(f"\n>>> {kind.upper()} Compression:")
+        for algo in algorithms:
+            if algo in summary_stats[kind]:
+                ratios, times = zip(*summary_stats[kind][algo])
+                avg_ratio = sum(ratios) / len(ratios)
+                avg_time = sum(times) / len(times)
+                print(f"[{algo.upper()}] Avg Ratio: {avg_ratio:.2%} | Avg Time: {avg_time:.4f} sec")
 
 if __name__ == '__main__':
     main()
