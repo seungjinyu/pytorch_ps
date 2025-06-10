@@ -47,10 +47,32 @@ def compress_and_measure(data: bytes, algorithm: str):
     comp_time = time.time() - start
     return comp, comp_time
 
+def decompress_and_measure(data: bytes, algorithm:str):
+    start = time.time()
+    if algorithm == "zlib":
+        decomp = zlib.decompress(data)
+    elif algorithm == "bz2":
+        decomp = bz2.decompress(data)
+    elif algorithm == "lzma":
+        decomp = lzma.decompress(data)
+    elif algorithm == "lz4":
+        decomp = lz4.frame.decompress(data)
+    elif algorithm == "zstd":
+        decomp = zstd.ZstdDecompressor().decompress(data)
+    elif algorithm == "snappy":
+        decomp = snappy.decompress(data)
+    elif algorithm == "blosc":
+        decomp = blosc2.decompress(data)
+    else:
+        raise ValueError("Unknown compression algorithm")
+
+    decomp_time = time.time() - start
+    return decomp, decomp_time
+
 def main():
     batch_size = 128
     learning_rate = 0.01
-    num_epochs = 50
+    num_epochs = 3
     device = ru.setting_platform()
     algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]
 
@@ -128,17 +150,30 @@ def main():
         epoch_results = {"grad": defaultdict(lambda: {"size": 0, "time": 0.0}),
                          "delta": defaultdict(lambda: {"size": 0, "time": 0.0})}
 
+        # Check compress and decompress time
         for task, algo in [(task, algo) for task in compression_tasks for algo in algorithms]:
             kind, data_bytes, original_size = task
-            comp_data, comp_time = compress_and_measure(data_bytes, algo)
-            comp_size = len(comp_data)
-            ratio = comp_size / original_size
-            epoch_results[kind][algo]["size"] += comp_size
-            epoch_results[kind][algo]["time"] += comp_time
+            try:
+                comp_data, comp_time = compress_and_measure(data_bytes, algo)
+                comp_size = len(comp_data)
+                ratio = comp_size / original_size
 
-            with open(result_file, mode='a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([epoch + 1, kind, algo, original_size, comp_size, f"{ratio:.4f}", f"{comp_time:.4f}"])
+                decomp_data, decomp_time = decompress_and_measure(comp_data, algo)
+                assert decomp_data == data_bytes, f"[ERROR] Decompressed data mismatch with {algo} on {kind}"
+
+                epoch_results[kind][algo]["size"] += comp_size
+                epoch_results[kind][algo]["time"] += comp_time
+
+                with open(result_file, mode='a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        epoch + 1, kind, algo,
+                        original_size, comp_size,
+                        f"{ratio:.4f}", f"{comp_time:.4f}", f"{decomp_time:.4f}"
+                    ])
+            except Exception as e:
+                print(f"[WARNING] Compression/Decompression failed for {algo} on {kind}: {e}")
+                continue
 
         print(f"\n[Epoch {epoch+1} Compression Summary] Total Original Size: {total_original_size} bytes")
         for kind in ["grad", "delta"]:
