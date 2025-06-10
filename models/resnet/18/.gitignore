@@ -6,4 +6,5 @@ data
 MNIST
 *.pth
 *.dylib
-*.csv 
+*.csv
+images
