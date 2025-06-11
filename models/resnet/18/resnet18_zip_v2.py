@@ -52,9 +52,9 @@ def decompress_and_measure(data: bytes, algorithm: str):
     if algorithm == "zlib":
         decomp = zlib.decompress(data)
     elif algorithm == "bz2":
-    #     decomp = bz2.decompress(data)
+        decomp = bz2.decompress(data)
     # elif algorithm == "lzma":
-        decomp = lzma.decompress(data)
+    #     decomp = lzma.decompress(data)
     elif algorithm == "lz4":
         decomp = lz4.frame.decompress(data)
     elif algorithm == "zstd":
@@ -69,10 +69,10 @@ def decompress_and_measure(data: bytes, algorithm: str):
 def main():
     batch_size = 128
     learning_rate = 0.01
-    num_epochs = 3
+    num_epochs = 10
     device = ru.setting_platform()
     # algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy"]
-    algorithms = ["zlib", "bz2", "lz4", "zstd", "snappy"]
+    algorithms = ["zlib", "bz2", "zstd"]
     transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
@@ -148,7 +148,7 @@ def main():
             compression_tasks.append(("delta", delta_bytes, len(delta_bytes)))
 
         epoch_results = {"grad": defaultdict(lambda: {"size": 0, "time": 0.0}),
-                         "delta": defaultdict(lambda: {"size": 0, "time": 0.0})}
+                         "delta": defaultdict(lambda: {"size": 0, "time": 0.0,"delta_time": 0.0})}
 
         for task, algo in [(task, algo) for task in compression_tasks for algo in algorithms]:
             kind, data_bytes, original_size = task
@@ -165,7 +165,11 @@ def main():
 
                 delta_time = ""
                 if kind == "delta":
-                    delta_time = f"{np.mean(list(delta_calc_times.values())):.6f}"
+                    delta_time_val = np.mean(list(delta_calc_times.values()))
+                    epoch_results[kind][algo]["delta_time"] += delta_time_val
+                    delta_time = f"{delta_time_val:.6f}"
+                else:
+                    delta_time = ""
 
                 with open(result_file, mode='a', newline='') as f:
                     writer = csv.writer(f)
@@ -190,7 +194,13 @@ def main():
                 if algo in epoch_results[kind]:
                     stats = epoch_results[kind][algo]
                     ratio = stats["size"] / total_original_size
-                    print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
+                    if kind == "delta":
+                        comp_time = stats["time"]
+                        delta_time = stats["delta_time"]
+                        total_time = comp_time + delta_time
+                        print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Comp Time: {comp_time:.4f} sec | Delta Time: {delta_time:.6f} sec | Total Time: {total_time:.4f} sec")
+                    else:
+                        print(f"[{algo.upper()}] Total Compressed: {stats['size']} bytes | Ratio: {ratio:.2%} | Time: {stats['time']:.4f} sec")
 
 if __name__ == '__main__':
     main()
