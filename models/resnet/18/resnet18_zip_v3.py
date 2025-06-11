@@ -75,7 +75,7 @@ def main():
     test_loader  = DataLoader(test_ds, batch_size=128, shuffle=False)
 
     prev_params = {}
-    for epoch in range(1, 4):
+    for epoch in range(1, 8):
         model.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)

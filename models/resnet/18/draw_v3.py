@@ -1,6 +1,9 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # 이미지 저장 폴더 설정
 image_dir = os.path.join(os.path.dirname(__file__), "images")
@@ -46,7 +49,8 @@ def plot_metric(metric, ylabel, title, filename):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    path = os.path.join(image_dir, filename)
+    filename_with_time = f"{timestamp}_{filename}"
+    path = os.path.join(image_dir, filename_with_time)
     plt.savefig(path)
     print(f"Saved: {path}")
     plt.close()
