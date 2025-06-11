@@ -34,8 +34,8 @@ def compress_and_measure(data: bytes, algorithm: str):
         comp = zlib.compress(data)
     elif algorithm == "bz2":
         comp = bz2.compress(data)
-    elif algorithm == "lzma":
-        comp = lzma.compress(data)
+    # elif algorithm == "lzma":
+    #     comp = lzma.compress(data)
     elif algorithm == "lz4":
         comp = lz4.frame.compress(data)
     elif algorithm == "zstd":
@@ -52,8 +52,8 @@ def decompress_and_measure(data: bytes, algorithm: str):
     if algorithm == "zlib":
         decomp = zlib.decompress(data)
     elif algorithm == "bz2":
-        decomp = bz2.decompress(data)
-    elif algorithm == "lzma":
+    #     decomp = bz2.decompress(data)
+    # elif algorithm == "lzma":
         decomp = lzma.decompress(data)
     elif algorithm == "lz4":
         decomp = lz4.frame.decompress(data)
@@ -71,8 +71,8 @@ def main():
     learning_rate = 0.01
     num_epochs = 3
     device = ru.setting_platform()
-    algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy"]
-
+    # algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy"]
+    algorithms = ["zlib", "bz2", "lz4", "zstd", "snappy"]
     transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
@@ -182,7 +182,7 @@ def main():
         print(f"\n[Epoch {epoch+1} Compression Summary] Total Original Size: {total_original_size} bytes")
 
         if delta_calc_times: 
-            avg_delta_time = np.mean(list(delta_calc_times.values))
+            avg_delta_time = np.mean(list(delta_calc_times.values()))
             print(f"\n>> Average Delta Calculation Time: {avg_delta_time:.6f} seconds" )
         for kind in ["grad", "delta"]:
             print(f"\n>>> {kind.upper()} Compression:")
