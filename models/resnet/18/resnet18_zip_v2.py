@@ -180,6 +180,10 @@ def main():
                 continue
 
         print(f"\n[Epoch {epoch+1} Compression Summary] Total Original Size: {total_original_size} bytes")
+
+        if delta_calc_times: 
+            avg_delta_time = np.mean(list(delta_calc_times.values))
+            print(f"\n>> Average Delta Calculation Time: {avg_delta_time:.6f} seconds" )
         for kind in ["grad", "delta"]:
             print(f"\n>>> {kind.upper()} Compression:")
             for algo in algorithms:
