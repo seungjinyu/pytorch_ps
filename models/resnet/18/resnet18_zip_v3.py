@@ -25,23 +25,6 @@ with open(result_file, mode='w', newline='') as f:
     writer.writerow(["Epoch", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio",
                      "Delta Time", "Compress Time", "Decompress Time", "Reconstruct Time", "Total Time"])
 
-# Compress
-def compress(data: bytes, algo: str):
-    start = time.time()
-    if algo == "zlib": c = zlib.compress(data)
-    elif algo == "bz2": c = bz2.compress(data)
-    elif algo == "zstd": c = zstd.ZstdCompressor().compress(data)
-    else: raise ValueError()
-    return c, time.time() - start
-
-# Decompress
-def decompress(data: bytes, algo: str):
-    start = time.time()
-    if algo == "zlib": d = zlib.decompress(data)
-    elif algo == "bz2": d = bz2.decompress(data)
-    elif algo == "zstd": d = zstd.ZstdDecompressor().decompress(data)
-    else: raise ValueError()
-    return d, time.time() - start
 
 # Evaluate Accuracy
 def evaluate(model, loader, device):
@@ -120,13 +103,16 @@ def main():
 
             for algo in algorithms:
                 t0 = time.time()
-                comp_bytes, comp_time = compress(grad_bytes, algo)
-                decomp_bytes, decomp_time = decompress(comp_bytes, algo)
+                comp_bytes, comp_time = ru.compress(grad_bytes, algo)
+                decomp_bytes, decomp_time = ru.decompress(comp_bytes, algo)
                 t1 = time.time()
 
                 assert decomp_bytes == grad_bytes
                 ratio = len(comp_bytes) / original_size
 
+                # epoch_metrics[algo]["grad_t"] = t1 - t0
+                # to load this we need to change the default dict
+                # and the writer for cs
                 epoch_metrics[algo]["total"] += original_size
                 epoch_metrics[algo]["comp"] += len(comp_bytes)
                 epoch_metrics[algo]["comp_t"] += comp_time
@@ -135,13 +121,12 @@ def main():
 
                 if epoch > 1:
                     current = param.data.detach().cpu().numpy().astype(np.float32)
-                    # start_delta = time.time()
-                    # delta = current - prev_params[name]
-                    # delta_bytes = delta.tobytes()
-                    # delta_time = time.time() - start_delta
+
                     delta_bytes , delta_time = compute_delta_bytes(current, prev_params[name])
-                    d_comp_bytes, d_comp_time = compress(delta_bytes, algo)
-                    d_decomp_bytes, d_decomp_time = decompress(d_comp_bytes, algo)
+                    # Compress
+                    d_comp_bytes, d_comp_time = ru.compress(delta_bytes, algo)
+                    # Decompress
+                    d_decomp_bytes, d_decomp_time = ru.decompress(d_comp_bytes, algo)
 
                     start_recon = time.time()
                     recon_grad = np.frombuffer(d_decomp_bytes, dtype=np.float32).reshape(current.shape)

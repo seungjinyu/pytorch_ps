@@ -3,6 +3,10 @@ import os
 import torch
 import ctypes
 import numpy as np
+import zlib
+import bz2
+import zstandard as zstd
+import time
 
 
 def is_arm():
@@ -84,3 +88,21 @@ def decompress_topk(real_vals, indices, shape):
     flat = torch.zeros(torch.prod(torch.tensor(shape)),device=real_vals.device)
     flat[indices] = real_vals
     return flat.view(shape)
+
+# Compress
+def compress(data: bytes, algo: str):
+    start = time.time()
+    if algo == "zlib": c = zlib.compress(data)
+    elif algo == "bz2": c = bz2.compress(data)
+    elif algo == "zstd": c = zstd.ZstdCompressor().compress(data)
+    else: raise ValueError()
+    return c, time.time() - start
+
+# Decompress
+def decompress(data: bytes, algo: str):
+    start = time.time()
+    if algo == "zlib": d = zlib.decompress(data)
+    elif algo == "bz2": d = bz2.decompress(data)
+    elif algo == "zstd": d = zstd.ZstdDecompressor().decompress(data)
+    else: raise ValueError()
+    return d, time.time() - start
