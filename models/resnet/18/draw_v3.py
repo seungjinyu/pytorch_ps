@@ -19,11 +19,12 @@ print(f"Loading: {csv_path}")
 # CSV 불러오기
 df = pd.read_csv(csv_path)
 
-# 컬럼 이름 확인 및 필요한 열만 변환
+# 컬럼 이름 확인
 expected_columns = [
     "Epoch", "Algorithm", "Original Size", "Compressed Size",
     "Compression Ratio", "Delta Time", "Compress Time",
-    "Decompress Time", "Reconstruct Time", "Total Time"
+    "Decompress Time", "Reconstruct Time", "Total Time",
+    "Delta Compression Ratio"
 ]
 
 missing_cols = [col for col in expected_columns if col not in df.columns]
@@ -52,11 +53,12 @@ def plot_metric(metric, ylabel, title, filename):
     filename_with_time = f"{timestamp}_{filename}"
     path = os.path.join(image_dir, filename_with_time)
     plt.savefig(path)
-    print(f"Saved: {path}")
+    print(f"✅ Saved: {path}")
     plt.close()
 
-# 각각의 메트릭 그래프 저장
-plot_metric("Compression Ratio", "Ratio", "Compression Ratio (Delta)", "delta_compression_ratio.png")
+# === 그래프 생성 ===
+plot_metric("Compression Ratio", "Ratio", "Gradient Compression Ratio", "grad_compression_ratio.png")
+plot_metric("Delta Compression Ratio", "Ratio", "Delta Compression Ratio", "delta_compression_ratio.png")
 plot_metric("Delta Time", "Seconds", "Delta Calculation Time", "delta_time.png")
 plot_metric("Compress Time", "Seconds", "Compression Time", "compression_time.png")
 plot_metric("Decompress Time", "Seconds", "Decompression Time", "decompression_time.png")

@@ -21,8 +21,12 @@ algorithms = ["zlib", "bz2", "zstd"]
 # CSV Header
 with open(result_file, mode='w', newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(["Epoch", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio",
-                     "Delta Time", "Compress Time", "Decompress Time", "Reconstruct Time", "Total Time"])
+    writer.writerow([
+        "Epoch", "Algorithm", "Original Size", "Compressed Size", "Compression Ratio",
+        "Delta Time", "Compress Time", "Decompress Time", "Reconstruct Time", "Total Time",
+        "Delta Compression Ratio"  # ✅ 추가
+    ])
+
 
 # Compress
 def compress(data: bytes, algo: str):
@@ -82,7 +86,7 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=128, shuffle=True)
     test_loader  = DataLoader(test_ds, batch_size=128, shuffle=False)
 
-    epochs = 5
+    epochs = 51
 
     prev_params = {}
     best_acc = 0.0
@@ -108,7 +112,7 @@ def main():
                 best_state_dict = model.state_dict()
         total_size = 0
         epoch_metrics = defaultdict(lambda: {"total": 0, "comp": 0, "ratio": 0,
-                                             "delta_t": 0, "comp_t": 0, "decomp_t": 0, "recon_t": 0, "count": 0})
+                                             "delta_t": 0, "comp_t": 0, "decomp_t": 0, "recon_t": 0, "count": 0,"delta_total":0,"delta_comp":0})
         # === [Epoch별 디렉토리 생성] ===
         
         epoch_path = os.path.join(epoch_dir, f"epoch_{epoch}")
@@ -159,6 +163,11 @@ def main():
                     d_comp_bytes, d_comp_time = compress(delta_bytes, algo)
                     d_decomp_bytes, d_decomp_time = decompress(d_comp_bytes, algo)
 
+                    d_original_size = len(delta_bytes)
+                    d_compressed_size = len(d_comp_bytes)
+                    epoch_metrics[algo]["delta_total"] += d_original_size
+                    epoch_metrics[algo]["delta_comp"]  += d_compressed_size
+
                     ## Check whether the gradient changed by the compress and decompress
                     assert d_decomp_bytes == delta_bytes
 
@@ -167,7 +176,7 @@ def main():
                     recon_time = time.time() - start_recon
 
                     assert recon_grad.shape == grad.shape
-                    param.grad = torch.tensor(recon_grad, dtype=torch.float32).to(param.device)  # ✅ 핵심 반영
+                    param.grad = torch.tensor(recon_grad, dtype=torch.float32).to(param.device)  # for training
 
 
                     epoch_metrics[algo]["delta_t"] += delta_time
@@ -182,13 +191,17 @@ def main():
                 m = epoch_metrics[algo]
                 if m["count"] == 0: continue
                 ratio = m["comp"] / m["total"]
+                delta_ratio = m["delta_comp"] / m["delta_total"] if m["delta_total"] > 0 else 0.0  # ✅
+
                 writer.writerow([
                     epoch, algo, m["total"], m["comp"], f"{ratio:.4f}",
                     f"{m['delta_t']:.4f}", f"{m['comp_t']:.4f}",
                     f"{m['decomp_t']:.4f}", f"{m['recon_t']:.4f}",
-                    f"{(m['delta_t']+m['comp_t']+m['decomp_t']+m['recon_t']):.4f}"
+                    f"{(m['delta_t']+m['comp_t']+m['decomp_t']+m['recon_t']):.4f}",
+                    f"{delta_ratio:.4f}"  # ✅ 추가
                 ])
-                print(f"[Epoch {epoch}] {algo} : Compression Ratio {ratio:.6f}")
+                if epoch != 1 :
+                    print(f"[Epoch {epoch}] {algo} : Delta comp Ratio {delta_ratio:.6f}")
 
         print(f"[Epoch {epoch}] Accuracy: {acc:.2%} | Total: {total_size//1024} KB ")
         
