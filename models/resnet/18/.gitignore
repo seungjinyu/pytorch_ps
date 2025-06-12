@@ -9,3 +9,4 @@ MNIST
 *.csv
 images
 csv
+ex_models
