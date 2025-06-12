@@ -10,7 +10,7 @@ import numpy as np
 import zlib, bz2, zstandard as zstd
 from collections import defaultdict
 from datetime import datetime
-
+import resnet18_utils as ru
 # Setup
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
 epoch_dir = os.path.join(root_dir, "epoch_data")
@@ -55,9 +55,18 @@ def evaluate(model, loader, device):
             total += y.size(0)
     return correct / total
 
+def compute_delta_bytes(current: np.ndarray , previous: np.ndarray) -> tuple[bytes, float]:
+    """Compute delta and return its byte representation"""
+    start = time.time()
+    delta = np.subtract(current, previous,dtype = np.float32)
+    delta_bytes = delta.tobytes()
+    return delta_bytes, time.time() - start
+
 # Main loop
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    device  = ru.setting_platform()
+
     model = resnet18(weights=None)
     model.fc = nn.Linear(model.fc.in_features, 10)
     model = model.to(device)
@@ -75,6 +84,7 @@ def main():
     test_loader  = DataLoader(test_ds, batch_size=128, shuffle=False)
 
     prev_params = {}
+    print("Starting training...")
     for epoch in range(1, 8):
         model.train()
         for x, y in train_loader:
@@ -114,11 +124,11 @@ def main():
 
                 if epoch > 1:
                     current = param.data.detach().cpu().numpy().astype(np.float32)
-                    start_delta = time.time()
-                    delta = current - prev_params[name]
-                    delta_bytes = delta.tobytes()
-                    delta_time = time.time() - start_delta
-
+                    # start_delta = time.time()
+                    # delta = current - prev_params[name]
+                    # delta_bytes = delta.tobytes()
+                    # delta_time = time.time() - start_delta
+                    delta_bytes , delta_time = compute_delta_bytes(current, prev_params[name])
                     d_comp_bytes, d_comp_time = compress(delta_bytes, algo)
                     d_decomp_bytes, d_decomp_time = decompress(d_comp_bytes, algo)
 
