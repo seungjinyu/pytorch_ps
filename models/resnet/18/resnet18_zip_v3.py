@@ -86,6 +86,10 @@ def main():
     epochs = 31
 
     prev_params = {}
+    best_acc = 0.0
+    best_epoch = 0
+    best_state_dict = None
+
     print("Starting training...")
     for epoch in range(1, epochs):
         model.train()
@@ -98,6 +102,11 @@ def main():
             optimizer.step()
 
         acc = evaluate(model, test_loader, device)
+
+        if acc > best_acc:
+                best_acc = acc
+                best_epoch = epoch
+                best_state_dict = model.state_dict()
         total_size = 0
         epoch_metrics = defaultdict(lambda: {"total": 0, "comp": 0, "ratio": 0,
                                              "delta_t": 0, "comp_t": 0, "decomp_t": 0, "recon_t": 0, "count": 0})
@@ -163,14 +172,15 @@ def main():
 
         print(f"[Epoch {epoch}] Accuracy: {acc:.2%} | Total: {total_size//1024} KB")
 
-        export_path = os.path.join("ex_models", f"resnet18_final_{timestamp}.pt")
-        torch.save(model.state_dict(), export_path)
-        print(f"\n✅ Final model saved to: {export_path}")
+    export_path = os.path.join("ex_models", f"resnet18_best_epoch{best_epoch}_{timestamp}.pt")
+    # torch.save(model.state_dict(), export_path)
+    torch.save(best_state_dict,export_path)
+    print(f"\n🏆 Best model saved from Epoch {best_epoch} ({best_acc:.2%}) → {export_path}")
 
-        # model = resnet18(weights=None)
-        # model.fc = nn.Linear(model.fc.in_features, 10)
-        # model.load_state_dict(torch.load("data/resnet18_final_20250612_104023.pt"))
-        # model.eval()
+    # model = resnet18(weights=None)
+    # model.fc = nn.Linear(model.fc.in_features, 10)
+    # model.load_state_dict(torch.load("data/resnet18_final_20250612_104023.pt"))
+    # model.eval()
 
 
 if __name__ == '__main__':
