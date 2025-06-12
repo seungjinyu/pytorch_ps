@@ -83,9 +83,11 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=128, shuffle=True)
     test_loader  = DataLoader(test_ds, batch_size=128, shuffle=False)
 
+    epochs = 31
+
     prev_params = {}
     print("Starting training...")
-    for epoch in range(1, 8):
+    for epoch in range(1, epochs):
         model.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
@@ -160,6 +162,16 @@ def main():
                 ])
 
         print(f"[Epoch {epoch}] Accuracy: {acc:.2%} | Total: {total_size//1024} KB")
+
+        export_path = os.path.join("ex_models", f"resnet18_final_{timestamp}.pt")
+        torch.save(model.state_dict(), export_path)
+        print(f"\n✅ Final model saved to: {export_path}")
+
+        # model = resnet18(weights=None)
+        # model.fc = nn.Linear(model.fc.in_features, 10)
+        # model.load_state_dict(torch.load("data/resnet18_final_20250612_104023.pt"))
+        # model.eval()
+
 
 if __name__ == '__main__':
     main()
