@@ -41,7 +41,7 @@ optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 prev_params = {}
 
 # ───── 학습 + 저장 루프 ─────
-num_epochs = 21
+num_epochs = 51
 for epoch in range(num_epochs):
     model.train()
     for inputs, targets in trainloader:
