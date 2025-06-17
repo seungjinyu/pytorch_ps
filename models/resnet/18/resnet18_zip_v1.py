@@ -72,7 +72,7 @@ def decompress_and_measure(data: bytes, algorithm:str):
 def main():
     batch_size = 128
     learning_rate = 0.01
-    num_epochs = 3
+    num_epochs = 6
     device = ru.setting_platform()
     algorithms = ["zlib", "bz2", "lzma", "lz4", "zstd", "snappy", "blosc"]
 
