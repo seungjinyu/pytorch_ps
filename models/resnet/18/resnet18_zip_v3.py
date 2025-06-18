@@ -86,7 +86,7 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=128, shuffle=True)
     test_loader  = DataLoader(test_ds, batch_size=128, shuffle=False)
 
-    epochs = 51
+    epochs = 100
 
     prev_params = {}
     best_acc = 0.0

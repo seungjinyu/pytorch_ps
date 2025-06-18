@@ -11,5 +11,6 @@ images
 csv
 ex_models
 epoch_data
+epoch_data_50
 epoch_weights
 logs

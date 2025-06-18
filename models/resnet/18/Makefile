@@ -12,7 +12,7 @@ full:
 	python draw_v3.py
 	python draw_delta_gra.py
 
-NUM_RUNS ?= 10
+NUM_RUNS ?= 2
 
 run-multi:
 	@echo "Launching $(NUM_RUNS) runs of gradvsdelta.py"
