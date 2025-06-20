@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Determinisitic config 
 # random seed fixed
-torch.manual_seed(0)
+torch.manual_seed(42)
 # True -> False Does not change the gradient
 torch.use_deterministic_algorithms(True)
 # True -> False does not change the gradient
