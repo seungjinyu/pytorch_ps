@@ -10,6 +10,7 @@ import numpy as np
 
 # ===== 랜덤 시드 고정 =====
 torch.manual_seed(42)
+torch.set_num_threads(1)
 
 # ===== ResNet18 정의 (CIFAR-10 수정) =====
 def get_resnet18():
@@ -27,7 +28,7 @@ receiver = context.socket(zmq.PULL)
 receiver.bind("tcp://*:5555")  # A가 PUSH하는 곳
 
 sender = context.socket(zmq.PUSH)
-sender.connect("tcp://<NODE_A_IP>:5556")  # A가 PULL하는 곳
+sender.connect("tcp://10.32.137.70:5556")  # A가 PULL하는 곳
 
 # ===== Gradient 수신 =====
 print("📡 Waiting for gradient from Node A...")

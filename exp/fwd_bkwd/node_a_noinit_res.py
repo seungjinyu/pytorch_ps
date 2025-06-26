@@ -9,6 +9,7 @@ import pickle
 
 # ===== 랜덤 시드 고정 =====
 torch.manual_seed(42)
+torch.set_num_threads(1)
 
 # ===== CIFAR-10 설정 =====
 transform = transforms.Compose([
@@ -16,7 +17,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 train_dataset = datasets.CIFAR10(root="../data", train=True, download=True, transform=transform)
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=2, shuffle=True)
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True)
 
 # ===== ResNet18 모델 정의 =====
 def get_resnet18():
@@ -34,7 +35,7 @@ optimizer = optim.SGD(model.parameters(), lr=0.01)
 # ===== ZeroMQ 통신 설정 =====
 context = zmq.Context()
 sender = context.socket(zmq.PUSH)
-sender.connect("tcp://<NODE_B_IP>:5555")  # Node B 주소 입력
+sender.connect("tcp://10.32.137.71:5555")  # Node B 주소 입력
 
 receiver = context.socket(zmq.PULL)
 receiver.bind("tcp://*:5556")
