@@ -32,6 +32,7 @@ for target_exp in experiments[1:]:
         tgt_arr = np.load(tgt_path)
         
         if np.allclose(ref_arr, tgt_arr, atol=1e-7):
+        # if np.array_equal(ref_arr, tgt_arr):
             continue
         else:    
             diffnum+=1
