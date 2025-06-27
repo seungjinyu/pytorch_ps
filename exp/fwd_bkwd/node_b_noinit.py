@@ -17,6 +17,9 @@ device = torch.device("cpu")
 # ======================
 model = models.mobilenet_v2(weights=None).to(device)
 optimizer = optim.SGD(model.parameters(), lr=0.01)
+model.train()
+
+
 
 # ======================
 # ZeroMQ 소켓 설정
@@ -29,8 +32,13 @@ print("🟢 Node B: 대기 중...")
 
 while True:
     # gradient 수신
-    grad_bytes = socket.recv()
-    named_grads = pickle.loads(grad_bytes)
+    # Node B: optimizer 상태도 동기화
+    data = pickle.loads(socket.recv())
+    named_grads = data["grads"]
+    optimizer.load_state_dict(data["opt_state"])
+
+    # grad_bytes = socket.recv()
+    # named_grads = pickle.loads(grad_bytes)
     print("📥 Node B: gradient 수신 완료")
 
     # .grad 수동 할당

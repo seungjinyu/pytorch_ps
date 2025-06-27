@@ -5,6 +5,7 @@ from torchvision import models, datasets, transforms
 import zmq
 import pickle
 import numpy as np
+from datetime import datetime
 
 # ======================
 # 설정
@@ -17,6 +18,8 @@ device = torch.device("cpu")
 # 모델 및 옵티마이저
 # ======================
 model = models.mobilenet_v2(weights=None).to(device)
+model.train()
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
 
@@ -34,7 +37,7 @@ inputs, labels = next(iter(loader))
 inputs, labels = inputs.to(device), labels.to(device)
 
 # ======================
-# Forward + Backward
+# Forward + Backward (단, step()은 하지 않음)
 # ======================
 outputs = model(inputs)
 loss = criterion(outputs, labels)
@@ -46,19 +49,22 @@ named_grads = {
     for name, p in model.named_parameters()
 }
 
-# Node A도 optimizer step 수행
-optimizer.step()
-torch.save(model.state_dict(), "model_A.pt")
-
 # ======================
-# ZeroMQ: gradient만 전송
+# ZeroMQ: gradient + optimizer state 전송
 # ======================
 context = zmq.Context()
 socket = context.socket(zmq.REQ)
-socket.connect("tcp://10.32.137.71:5555")  # ← Node B IP 주소로 바꿔야 함
+socket.connect("tcp://10.32.137.71:5555")  # Node B IP
 
-print("📤 Node A: gradient만 전송 중...")
-socket.send(pickle.dumps(named_grads))
+data_to_send = {
+    "grads": named_grads,
+    "opt_state": optimizer.state_dict()
+}
+
+serialized_grads = pickle.dumps(data_to_send)
+print(f"📦 Gradient total serialized size: {len(serialized_grads)/1024:.2f} KB")
+print("📤 Node A: gradient 전송 중...")
+socket.send(serialized_grads)
 
 # Node B로부터 업데이트된 모델 수신
 reply = socket.recv()
@@ -66,7 +72,7 @@ state_dict_b = pickle.loads(reply)
 print("📥 Node A: Node B 모델 수신 완료")
 
 # ======================
-# 모델 비교
+# 모델 파라미터 비교
 # ======================
 state_dict_a = model.state_dict()
 total = 0
@@ -89,5 +95,13 @@ if mismatched_keys:
     print(f"❌ MISMATCHED KEYS ({len(mismatched_keys)}):")
     for key in mismatched_keys:
         print(f" - {key}")
+
+    # 로그로 저장
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = "mismatch_log.txt"
+    with open(log_path, "a") as f:
+        mismatch_line = ", ".join(mismatched_keys)
+        f.write(f"[{timestamp}]: {mismatch_line}\n")
+    print(f"📄 Mismatch keys appended to: {log_path}")
 else:
     print("🎉 All parameters match exactly!")
