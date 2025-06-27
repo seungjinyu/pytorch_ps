@@ -1,1 +1,4 @@
 experiment_grads
+__pycache__
+logdir_*/
+profile_*.json
