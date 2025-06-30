@@ -21,7 +21,8 @@ torch.backends.cudnn.deterministic = True
 # False -> True the gradient changes
 torch.backends.cudnn.benchmark = False 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 print(f"Running on {device}")
 
@@ -30,7 +31,7 @@ transform = transforms.Compose([
 ])
 
 # Data 
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True , download=True, transform=transform)
+trainset = torchvision.datasets.CIFAR10(root='../data', train=True , download=True, transform=transform)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=20,shuffle=False)
 
 model = torchvision.models.resnet18()

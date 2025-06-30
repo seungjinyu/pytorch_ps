@@ -1,3 +1,6 @@
+import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,21 +8,36 @@ from torchvision import models, transforms, datasets
 
 from torch.profiler import profile, ProfilerActivity
 from datetime import datetime
+
 import os, json
+
+
 
 # === 설정 ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 trace_file = f"profile_trace_{timestamp}.json"
 
 torch.manual_seed(0)
-device = torch.device("cpu")
+
+
+
+torch.set_num_threads(1)
+torch.use_deterministic_algorithms(True)
+
+# device = torch.device("cpu")
+device = torch.device("cuda")
+
 
 model = models.mobilenet_v2(weights=None).to(device)
 model.train()
 
-transform = transforms.Compose([transforms.Resize(64), transforms.ToTensor()])
-dataset = datasets.CIFAR10(root="../../data", train=True, transform=transform, download=True)
-loader = torch.utils.data.DataLoader(dataset, batch_size=2)
+# ========== 데이터 ==========
+transform = transforms.Compose([
+    transforms.Resize(64),  # 원래는 224지만 실험 간소화
+    transforms.ToTensor()
+])
+dataset = datasets.CIFAR10(root="../data", train=True, transform=transform, download=True)
+loader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=False)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
