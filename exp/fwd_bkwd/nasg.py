@@ -1,116 +1,65 @@
-import torch 
+import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import models, transforms, datasets
+from torchvision import models
+import zmq, pickle
 
-import zmq 
-import os 
-import pickle
-import numpy as np
-import csv
-from datetime import datetime
-
-# ======================
-# Function: Save gradient to CSV with timestamp
-# ======================
-def save_grad_to_csv(grad_tensor, prefix="grad_node"):
-    os.makedirs("experiment_grads", exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}_{timestamp}.csv"
-    path = os.path.join("experiment_grads", filename)
-    flat = grad_tensor.view(-1).cpu().numpy() if isinstance(grad_tensor, torch.Tensor) else grad_tensor.reshape(-1)
-    with open(path, mode='w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["grad_value"])
-        for val in flat:
-            writer.writerow([val])
-    print(f"💾 Saved: {path}")
-    return path
-
-# ======================
-# 환경 변수 및 ZeroMQ 연결
-# ======================
-NODE_B_IP = os.environ.get("NODE_B_IP", "localhost")
-
-context = zmq.Context() 
-socket = context.socket(zmq.REQ)
-socket.connect(f"tcp://{NODE_B_IP}:5555")
-print(f"🔗 Connected to Node B at {NODE_B_IP}:5555")
-
-# ======================
-# 기본 설정
-# ======================
-torch.manual_seed(0)
-torch.set_num_threads(1)
+# 설정
+torch.manual_seed(42)
 torch.use_deterministic_algorithms(True)
+torch.set_num_threads(1)
 device = torch.device("cpu")
-print(f"🖥️  Running on {device}")
 
-# ======================
-# 모델 및 데이터 설정
-# ======================
+# 모델 & 옵티마이저
 model = models.mobilenet_v2(weights=None).to(device)
 model.train()
+optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-transform = transforms.Compose([
-    transforms.Resize(64),
-    transforms.ToTensor()
-])
+# 데이터
+inputs = torch.randn(2, 3, 64, 64).to(device)
+labels = torch.randint(0, 10, (2,)).to(device)
 
-# 데이터셋 경로 설정
-script_dir = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.abspath(os.path.join(script_dir, "../../data"))
-
-dataset = datasets.CIFAR10(root=data_dir, train=True, transform=transform, download=True)
-loader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True)
-
-# ======================
-# 입력 데이터 준비
-# ======================
-inputs, labels = next(iter(loader))
-inputs, labels = inputs.to(device), labels.to(device)
-
-# ======================
-# 모델 Forward (detach해서 보냄)
-# ======================
+# forward
 outputs = model(inputs)
 outputs.retain_grad()
+loss_fn = nn.CrossEntropyLoss()
 
+# B에게 보낼 output만
 payload = {
-    "outputs": outputs.detach().cpu(),  # graph는 제거된 상태
+    "outputs": outputs.detach().cpu(),
     "labels": labels.cpu()
 }
 
-serialized = pickle.dumps(payload)
-print(f"📤 Node A: sending forward outputs... ({len(serialized)/1024:.2f} KB)")
-socket.send(serialized)
+# ZeroMQ 송신
+context = zmq.Context()
+socket = context.socket(zmq.REQ)
+socket.connect("tcp://10.32.137.71:5555")
+socket.send(pickle.dumps(payload))
+print("📤 Sent outputs to Node B")
 
-# ======================
-# Node B의 결과 수신 및 비교
-# ======================
+# A에서도 ∂L/∂outputs 계산
+loss_a = loss_fn(outputs, labels)
+loss_a.backward()
+grad_a = outputs.grad.detach().clone().cpu()
+
+# B로부터 받은 grad 수신
 reply = socket.recv()
-print("📥 Node A: received gradient from Node B")
-data_b = pickle.loads(reply)
-grad_b = torch.tensor(data_b["outputs_grad"])
+grad_b = pickle.loads(reply)["outputs_grad"]
+grad_b_tensor = torch.tensor(grad_b)
 
-# Node A에서 backward 수행
-loss_fn = nn.CrossEntropyLoss()
-loss = loss_fn(outputs, labels)
-loss.backward()
-grad_a = outputs.grad
-
-# ======================
-# CSV 저장
-# ======================
-save_grad_to_csv(grad_a, prefix="grad_node_a")
-save_grad_to_csv(grad_b, prefix="grad_node_b")
-
-# ======================
-# Gradient 비교
-# ======================
-if torch.allclose(grad_a, grad_b, atol=1e-6):
-    print("🎉 Gradient match!")
+# 1️⃣ gradient 비교
+print("\n📊 Comparing ∂L/∂outputs")
+if torch.allclose(grad_a, grad_b_tensor, atol=1e-6):
+    print("✅ A와 B의 outputs gradient 일치")
 else:
-    diff = torch.abs(grad_a - grad_b)
-    print("❌ Gradient mismatch!")
-    print(f"Max diff: {torch.max(diff):.4e}")
+    diff = (grad_a - grad_b_tensor).abs()
+    print(f"❌ Gradient mismatch, max diff: {diff.max():.4e}")
+
+# 2️⃣ outputs.backward(grad_from_b) 수행 → parameter.grad 생성
+model.zero_grad()
+outputs = model(inputs)  # 다시 forward
+outputs.backward(grad_b_tensor)
+
+# 3️⃣ parameter update
+optimizer.step()
+print("✅ A: model parameters updated using B's gradient")
