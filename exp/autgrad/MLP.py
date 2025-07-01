@@ -58,17 +58,18 @@ with profile(
     with_flops=True
 ) as prof:
     for epoch in range(5):
-        for images, labels in train_loader:
+        for step, (images, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             with torch.autograd.profiler.record_function("model_forward"):
                 outputs = model(images)
-
             with torch.autograd.profiler.record_function("model_loss"):
                 loss = criterion(outputs, labels)
             with torch.autograd.profiler.record_function("model_backward"):
                 loss.backward()
-
             optimizer.step()
+
+            if step >10:
+                break
         print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
 
 # model.eval()
