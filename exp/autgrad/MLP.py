@@ -13,6 +13,7 @@ import time
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 trace_file = f"profile_trace_simple_{timestamp}.json"
 
+device = torch.device("cpu")
 
 transform = transforms.Compose([
     transforms.ToTensor(),
@@ -59,6 +60,7 @@ with profile(
 ) as prof:
     for epoch in range(5):
         for step, (images, labels) in enumerate(train_loader):
+            images , labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             with torch.autograd.profiler.record_function("model_forward"):
                 outputs = model(images)
